@@ -14,9 +14,8 @@ from torch.utils.data import DataLoader
 import numpy as np
 
 from options import Options
-#from dataset import HCCDataset2
 from dataset import HCCDataset6
-from models import BaselineNet, BaselineNet2, BaselineNet7
+from models import BaselineNet7
 import utils
 
 

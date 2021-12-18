@@ -10,12 +10,11 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
 import torchvision.transforms as transforms
-from models import BaselineNet, BaselineNet2, BaselineNet7
+from models import  BaselineNet7
 import numpy as np
 from sklearn import metrics
 
 from options import Options
-#from dataset import HCCDataset2
 from dataset import HCCDataset6
 import utils
 
