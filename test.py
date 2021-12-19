@@ -81,8 +81,8 @@ def get_probs(opt):
 
     data_transform = transforms.Compose([
                     transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485],
-                                         std=[0.229])
+                    #transforms.Normalize(mean=[0.485],
+                    #                     std=[0.229])
                 ])
     fold_num = opt.exp_num.split('_')[-1]
     print('Fold number: {:s}'.format(fold_num))

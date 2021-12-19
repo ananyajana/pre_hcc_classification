@@ -60,9 +60,9 @@ def main():
 
     # ---------- Data loading ---------- #
     data_transform = transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485],
-                                         std=[0.229])
+                    transforms.ToTensor()
+                    #transforms.Normalize(mean=[0.485],
+                    #                     std=[0.229])
                 ])
 
     fold_num = opt.exp_num.split('_')[-1]
