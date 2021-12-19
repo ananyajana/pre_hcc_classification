@@ -16,7 +16,7 @@ bool_use_resnet=1
 pre_train_sup=0
 method=''
 sup_model=''
-chkpt_path=''
+chkpt_path='ab'
 sup_model_path=''
 
 # location of the data
