@@ -137,3 +137,191 @@ def weight_init2(net):
             nn.init.constant_(m.bias.data, 0)
 
 
+########################## AttnMIL ######################
+class BaselineNet3(nn.Module):
+    def __init__(self, num_classes, layers=18, train_res4=True):
+        super(BaselineNet3, self).__init__()
+        dim_dict = {18: 512, 34: 512, 50: 2048, 101: 2048}
+
+        self.L = 512
+        self.D = 128
+        self.K = 1
+
+        self.resnet = ResNet_extractor2(layers, train_res4, 2, False)
+        self.attention = nn.Sequential(
+            nn.Linear(self.L, self.D),
+            nn.Tanh(),
+            nn.Linear(self.D, self.K)
+        ) 
+        self.classifier = nn.Sequential(
+            nn.Linear(self.L * self.K, num_classes),
+            nn.Sigmoid()
+        )
+
+    def set_fea_extractor(self, chkpt_path):
+        print('loading checkpoint model')
+        chkpt = torch.load(chkpt_path)
+        new_chkpt=OrderedDict()
+        for k, v in chkpt.items():
+            name = k[7:] # remove module
+            new_chkpt[name] = v
+        self.resnet.load_state_dict(new_chkpt)
+
+    def forward(self, x):
+        H = self.resnet(x) # NxL
+        
+        #print('H after feature extraction: ', H.size())
+        A = self.attention(H) # NxK
+        #print('A after attention tion: ', A.size())
+        A = torch.transpose(A, 1, 0) # KxN
+        #print('A after transpose: ', A.size())
+        A = F.softmax(A, dim=1) # softmax over N
+        #print('A after softmax : ', A.size())
+        M = torch.mm(A, H)  #KxL
+        #print('M after torch.mm : ', A.size())
+        Y_prob = self.classifier(M)
+        #print('Y_prob size: ', Y_prob.size())
+        Y_hat = torch.ge(Y_prob, 0.5).float()
+        #return Y_prob, Y_hat, A
+        return Y_prob
+
+################################ Gated AttnMIL ############################
+class BaselineNet4(nn.Module):
+    def __init__(self, num_classes, layers=18, train_res4=True):
+        super(BaselineNet4, self).__init__()
+        dim_dict = {18: 512, 34: 512, 50: 2048, 101: 2048}
+
+        self.L = 512
+        self.D = 128
+        self.K = 1
+
+        self.resnet = ResNet_extractor2(layers, train_res4, 2, False)
+        self.attention = nn.Sequential(
+            nn.Linear(self.L, self.D),
+            nn.Tanh(),
+            nn.Linear(self.D, self.K)
+        ) 
+        self.attention_V = nn.Sequential(
+            nn.Linear(self.L, self.D),
+            nn.Tanh()
+        )
+
+        self.attention_U = nn.Sequential(
+            nn.Linear(self.L, self.D),
+            nn.Sigmoid()
+        )
+
+        self.attention_weights = nn.Linear(self.D, self.K)
+        self.classifier = nn.Sequential(
+            nn.Linear(self.L * self.K, num_classes),
+            nn.Sigmoid()
+        )
+
+    def set_fea_extractor(self, chkpt_path):
+        print('loading checkpoint model')
+        chkpt = torch.load(chkpt_path)
+        new_chkpt=OrderedDict()
+        for k, v in chkpt.items():
+            name = k[7:] # remove module
+            new_chkpt[name] = v
+        self.resnet.load_state_dict(new_chkpt)
+
+    def forward(self, x):
+        H = self.resnet(x) # NxL
+        
+        #print('H after feature extraction: ', H.size())
+        A_V = self.attention_V(H) # NxD
+        A_U = self.attention_U(H) # NxD
+        A = self.attention_weights(A_V * A_U) # element wise multiplication # NxK
+        #print('A after attention tion: ', A.size())
+        A = torch.transpose(A, 1, 0) # KxN
+        #print('A after transpose: ', A.size())
+        A = F.softmax(A, dim=1) # softmax over N
+        #print('A after softmax : ', A.size())
+        M = torch.mm(A, H)  #KxL
+        #print('M after torch.mm : ', A.size())
+        Y_prob = self.classifier(M)
+        #print('Y_prob size: ', Y_prob.size())
+        Y_hat = torch.ge(Y_prob, 0.5).float()
+        #return Y_prob, Y_hat, A
+        return Y_prob, Y_hat, A
+
+     # AUXILIARY METHODS
+    def calculate_classification_error(self, X, Y):
+        Y = Y.float()
+        _, Y_hat, _ = self.forward(X)
+        error = 1. - Y_hat.eq(Y).cpu().float().mean().data[0]
+
+        return error, Y_hat
+
+    def calculate_objective(self, X, Y):
+        Y = Y.float()
+        Y_prob, _, A = self.forward(X)
+        Y_prob = torch.clamp(Y_prob, min=1e-5, max=1. - 1e-5)
+        neg_log_likelihood = -1. * (Y * torch.log(Y_prob) + (1. - Y) * torch.log(1. - Y_prob))  # negative log bernoulli
+
+        return neg_log_likelihood, A
+
+
+##################33 Loss AttnMIL #######################
+class AttentionLayer(nn.Module):
+    def __init__(self, dim=512):
+        super(AttentionLayer, self).__init__()
+        self.dim = dim
+        self.linear = nn.Linear(dim, 1)
+
+    def forward(self, features, W_1, b_1, flag):
+        if flag==1:
+            out_c = F.linear(features, W_1, b_1)
+            out = out_c - out_c.max()
+            out = out.exp()
+            out = out.sum(1, keepdim=True)
+            alpha = out / out.sum(0)
+            
+
+            alpha01 = features.size(0)*alpha.expand_as(features)
+            context = torch.mul(features, alpha01)
+        else:
+            context = features
+            alpha = torch.zeros(features.size(0),1)
+                
+        return context, out_c, torch.squeeze(alpha)
+# Loss attention method
+class BaselineNet5(nn.Module):
+    def __init__(self, num_classes, layers=18, train_res4=True):
+        super(BaselineNet5, self).__init__()
+        dim_dict = {18: 512, 34: 512, 50: 2048, 101: 2048}
+
+        self.L = 512
+        self.D = 128
+        self.K = 1
+
+        self.resnet = ResNet_extractor2(layers, train_res4, 2, False)
+
+        self.att_layer = AttentionLayer(self.L)
+        #self.linear = nn.Linear(self.L * self.K, 4)
+        self.linear = nn.Linear(self.L * self.K, num_classes)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(self.L * self.K, num_classes),
+            nn.Sigmoid()
+        )
+
+    def set_fea_extractor(self, chkpt_path):
+        print('loading checkpoint model')
+        chkpt = torch.load(chkpt_path)
+        new_chkpt=OrderedDict()
+        for k, v in chkpt.items():
+            name = k[7:] # remove module
+            new_chkpt[name] = v
+        self.resnet.load_state_dict(new_chkpt)
+
+    def forward(self, x, flag=1):
+        H = self.resnet(x) # NxL
+
+        out, out_c, alpha = self.att_layer(H, self.linear.weight, self.linear.bias, flag)
+        out = out.mean(0, keepdim=True)
+
+        y = self.linear(out)
+        return y, out_c, alpha
+        
